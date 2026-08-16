@@ -1,0 +1,48 @@
+name: Make 100-song chunks
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Split library into 100-song JSON files
+        run: |
+          python3 <<'PY'
+          import json
+          from pathlib import Path
+
+          source = Path('vk_music_5668_songs.json')
+          out = Path('library_100')
+          out.mkdir(exist_ok=True)
+
+          with source.open(encoding='utf-8') as f:
+              songs = json.load(f)
+
+          for p in out.glob('part_*.json'):
+              p.unlink()
+
+          for start in range(0, len(songs), 100):
+              part = start // 100 + 1
+              path = out / f'part_{part:03d}.json'
+              with path.open('w', encoding='utf-8') as f:
+                  json.dump(songs[start:start+100], f, ensure_ascii=False, indent=2)
+              print(f'{path}: {start+1}-{min(start+100, len(songs))}')
+
+          print(f'Created {(len(songs)+99)//100} chunks from {len(songs)} songs')
+          PY
+
+      - name: Commit chunks
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add library_100/
+          git commit -m 'Split music library into 100-song chunks' || echo 'No changes'
+          git push
