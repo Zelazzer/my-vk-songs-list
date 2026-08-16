@@ -1,0 +1,44 @@
+name: Extract rock metal candidates
+
+on:
+  push:
+    paths:
+      - vk_music_5668_songs.json
+      - .github/workflows/extract-rock-metal.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract candidate tracks
+        run: |
+          python - <<'PY'
+          import json,re
+          src='vk_music_5668_songs.json'
+          with open(src,encoding='utf-8') as f: data=json.load(f)
+          # First-pass title heuristics only. This deliberately favors recall over precision;
+          # we will manually curate the resulting, much smaller pool.
+          strong = r'''metal|metalcore|nu metal|numetal|heavy metal|death metal|black metal|power metal|folk metal|symphonic metal|industrial metal|groove metal|thrash|doom metal|sludge|stoner metal|alternative metal|gothic metal|progressive metal|deathcore|blackgaze|post-metal|hardcore|hard rock|alternative rock|post-grunge|grunge|punk rock|pop punk|emo|screamo|rock|рок|метал|металл|хардкор|панк|гранж|постгранж|поп-панк|хеви|готик|готический|пауэр|фолк'''
+          # Known artist names likely to appear in title strings/reuploads.
+          artists = r'''papa roach|three days grace|breaking benjamin|disturbed|linkin park|system of a down|soad|evanescence|fall out boy|green day|sum 41|offspring|limp bizkit|korn|slipknot|deftones|avenged sevenfold|bullet for my valentine|bring me the horizon|killswitch engage|parkway drive|architects|bad omens|sleep token|five finger death punch|rob zombie|marilyn manson|rammstein|powerwolf|feuerschwanz|sabaton|nightwish|within temptation|epica|amon amarth|in flames|children of bodom|metallica|iron maiden|judas priest|black sabbath|megadeth|slayer|motörhead|motorhead|scorpions|foo fighters|nickelback|three days|rise against|bad religion|offspring|my chemical romance|muse|placebo|royal blood'''
+          pat=re.compile(r'(?:'+strong+r'|'+artists+r')',re.I)
+          out=[]
+          for x in data:
+              t=x.get('title','')
+              if pat.search(t): out.append(x)
+          with open('rock_metal_candidates.json','w',encoding='utf-8') as f:
+              json.dump(out,f,ensure_ascii=False,indent=2)
+          print('Total:',len(data),'Candidates:',len(out))
+          PY
+      - name: Commit candidate list
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add rock_metal_candidates.json
+          git diff --cached --quiet || git commit -m 'Extract rock and metal playlist candidates'
+          git push
