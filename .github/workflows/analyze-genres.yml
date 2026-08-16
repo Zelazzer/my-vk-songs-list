@@ -1,0 +1,109 @@
+name: Analyze music genres
+
+on:
+  push:
+    paths-ignore:
+      - genre_analysis.json
+
+permissions:
+  contents: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Analyze tracks via Deezer public API
+        env:
+          INPUT: vk_music_5668_songs.json
+          OUTPUT: genre_analysis.json
+        run: |
+          python - <<'PY'
+          import json, re, time, urllib.parse, urllib.request
+          from collections import Counter
+
+          with open('vk_music_5668_songs.json', encoding='utf-8') as f:
+              data = json.load(f)
+
+          def get_json(url):
+              req = urllib.request.Request(url, headers={'User-Agent':'music-library-analysis/1.0'})
+              with urllib.request.urlopen(req, timeout=20) as r:
+                  return json.load(r)
+
+          def norm(s):
+              return re.sub(r'[^a-z0-9а-яё]+', '', s.lower())
+
+          cache = {}
+          counts = Counter()
+          matched = 0
+          unmatched = 0
+          uncertain = 0
+
+          # Deezer's public search endpoint is unauthenticated. We search by title,
+          # choose an exact/near-exact title match when possible, then read the track's
+          # album genre. Generic titles are marked uncertain rather than silently trusted.
+          for i, item in enumerate(data, 1):
+              title = item.get('title','').strip()
+              key = title.lower()
+              if key in cache:
+                  genre, conf = cache[key]
+              else:
+                  try:
+                      q = urllib.parse.quote(title)
+                      res = get_json(f'https://api.deezer.com/search/track?q={q}&limit=10')
+                      rows = res.get('data', [])
+                      if not rows:
+                          genre, conf = 'Unknown', 'none'
+                      else:
+                          nt = norm(title)
+                          exact = [x for x in rows if norm(x.get('title','')) == nt or norm(x.get('title_short','')) == nt]
+                          pick = exact[0] if exact else rows[0]
+                          if exact:
+                              conf = 'high'
+                          else:
+                              conf = 'medium'
+                          tid = pick.get('id')
+                          if tid:
+                              tr = get_json(f'https://api.deezer.com/track/{tid}')
+                              genre = (tr.get('album') or {}).get('genre') or (tr.get('genre') or {}).get('name') or 'Unknown'
+                              if not exact:
+                                  uncertain += 1
+                          else:
+                              genre, conf = 'Unknown', 'none'
+                  except Exception:
+                      genre, conf = 'Unknown', 'error'
+                  cache[key] = (genre, conf)
+                  time.sleep(0.08)
+
+              if genre == 'Unknown':
+                  unmatched += 1
+              else:
+                  matched += 1
+                  counts[genre] += 1
+
+              if i % 250 == 0:
+                  print(f'Processed {i}/{len(data)}')
+
+          total = len(data)
+          result = {
+              'total_tracks': total,
+              'matched_tracks': matched,
+              'unknown_tracks': unmatched,
+              'note': 'Genre comes from Deezer album/track metadata where a title match was found; this is not an official VK genre field. Generic or non-exact title matches can be ambiguous.',
+              'genres': [
+                  {'genre': g, 'tracks': n, 'percent': round(n*100/total, 2)}
+                  for g,n in counts.most_common()
+              ],
+              'unknown_percent': round(unmatched*100/total, 2),
+          }
+          with open('genre_analysis.json','w',encoding='utf-8') as f:
+              json.dump(result,f,ensure_ascii=False,indent=2)
+          print(json.dumps(result, ensure_ascii=False, indent=2))
+          PY
+      - name: Commit analysis
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add genre_analysis.json
+          git diff --cached --quiet || git commit -m 'Add genre analysis'
+          git push
