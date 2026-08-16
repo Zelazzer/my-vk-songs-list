@@ -1,0 +1,60 @@
+name: Rank rock metal shortlist
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rank:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build quality shortlist
+        run: |
+          python3 <<'PY'
+          import json, re
+          from pathlib import Path
+
+          src=Path('rock_metal_candidates_deezer.json')
+          data=json.loads(json.loads(src.read_text(encoding='utf-8'))['content'])
+
+          # Strong artist matches based on the taste profile established in chat.
+          tiers = {
+            100: ['trivium','termina','breaking benjamin','shinedown','godsmack','evanescence','nightwish','powerwolf','feuerschwanz','three days grace','bullet for my valentine','linkin park','escape the fate','our last night','imminence','avatar','disturbed','deftones','korn','slipknot','avenged sevenfold','papa roach','skillet','within temptation','epica','halestorm','the pretty reckless','my chemical romance','paramore','system of a down','rise against','bad omens','bring me the horizon','architects','killswitch engage','amon amarth','sabaton','ghost','rammstein'],
+            90: ['metallica','iron maiden','judas priest','black sabbath','megadeth','pantera','anthrax','alice in chains','soundgarden','foo fighters','nirvana','muse','royal blood','alter bridge','five finger death punch','volbeat','in flames','bullet for my valentine','asking alexandria','motionless in white','falling in reverse','memphis may fire','sleep token'],
+          }
+
+          def score(x):
+            artist=str(x.get('artist','')).strip().casefold()
+            title=str(x.get('title','')).casefold()
+            deezer=str(x.get('deezer_title','')).casefold()
+            s=0
+            for pts,names in tiers.items():
+              if any(n in artist for n in names): s=max(s,pts)
+            # Additional genre/title signals, deliberately weaker than artist identity.
+            if re.search(r'\b(metalcore|nu[- ]?metal|heavy metal|deathcore|hardcore|post[- ]hardcore|symphonic metal|power metal|folk metal|alternative metal)\b', title+' '+deezer): s=max(s,70)
+            if re.search(r'\b(rock|metal|hard rock|grunge|punk)\b', title+' '+deezer): s=max(s,45)
+            # Penalize known non-music/obvious false-positive contexts.
+            if artist in {'deezer','taylor swift','lum!x','hippie sabotage','reaper','don diablo'}: s-=50
+            if 'rain' in title and artist=='deezer': s=-100
+            return s
+
+          for x in data: x['_score']=score(x)
+          data=[x for x in data if x['_score']>=45]
+          data.sort(key=lambda x:(-x['_score'], str(x.get('artist','')).casefold(), str(x.get('title','')).casefold()))
+          data=data[:500]
+          for x in data: x.pop('_score',None)
+          Path('rock_metal_shortlist.json').write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf-8')
+          print('Final shortlist:',len(data))
+          PY
+
+      - name: Commit shortlist
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add rock_metal_shortlist.json
+          git commit -m 'Create quality rock and metal shortlist' || echo 'No changes'
+          git push
