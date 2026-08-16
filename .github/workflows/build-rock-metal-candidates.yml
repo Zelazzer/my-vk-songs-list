@@ -1,0 +1,77 @@
+name: Build rock metal candidates
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract broad rock and metal candidates
+        run: |
+          python3 <<'PY'
+          import json, re
+          from pathlib import Path
+
+          source = Path('vk_music_5668_songs.json')
+          out = Path('rock_metal_candidates_broad.json')
+
+          with source.open(encoding='utf-8') as f:
+              songs = json.load(f)
+
+          # Broad title signals. This is intentionally permissive; final selection
+          # will be manually ranked rather than treating every hit as rock/metal.
+          patterns = [
+              r'\bmetal\b', r'\bmetalcore\b', r'\bnu[- ]?metal\b',
+              r'\bdeath\b', r'\bblack\b', r'\bdoom\b', r'\bthrash\b',
+              r'\bheavy\b', r'\bhardcore\b', r'\bcore\b', r'\bgrind\b',
+              r'\bslipknot\b', r'\blinkin park\b', r'\btrivium\b',
+              r'\bbullet for my valentine\b', r'\bbreaking benjamin\b',
+              r'\bthree days grace\b', r'\bpapa roach\b', r'\bshinedown\b',
+              r'\bgodsmack\b', r'\bpowerwolf\b', r'\bfeuerschwanz\b',
+              r'\bnightwish\b', r'\bevanescence\b', r'\bwithin temptation\b',
+              r'\bepica\b', r'\barch enemy\b', r'\bavenged sevenfold\b',
+              r'\bdisturbed\b', r'\bkoRn\b', r'\bkorn\b', r'\bdeftones\b',
+              r'\brammstein\b', r'\bghost\b', r'\bskillet\b',
+              r'\bfall out boy\b', r'\bmy chemical romance\b',
+              r'\bparamore\b', r'\bhalestorm\b', r'\bthe pretty reckless\b',
+              r'\brock\b', r'\bpunk\b', r'\bgrunge\b', r'\bpost[- ]hardcore\b',
+              r'\bindustrial\b', r'\bgothic\b', r'\bpower metal\b',
+              r'\bfolk metal\b', r'\bsymphonic\b', r'\bprogressive metal\b'
+          ]
+          rx = re.compile('|'.join(patterns), re.I)
+
+          # Also retain titles with strong artist-independent heavy-song terms.
+          heavy_terms = re.compile(
+              r'\b(hate|rage|scream|screaming|hell|devil|demon|monster|war|blood|grave|fire|burn|\'
+              r'\bbleed|broken|destroy|sinner|darkness|riot|savage|beast|wicked)\b', re.I
+          )
+
+          result = []
+          seen = set()
+          for song in songs:
+              title = str(song.get('title',''))
+              if rx.search(title) or heavy_terms.search(title):
+                  key = (title.casefold(), song.get('url',''))
+                  if key not in seen:
+                      seen.add(key)
+                      result.append(song)
+
+          out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
+          print(f'Library: {len(songs)} songs')
+          print(f'Candidates: {len(result)} songs')
+          PY
+
+      - name: Commit candidate file
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add rock_metal_candidates_broad.json
+          git commit -m 'Build broad rock and metal candidate pool' || echo 'No changes'
+          git push
