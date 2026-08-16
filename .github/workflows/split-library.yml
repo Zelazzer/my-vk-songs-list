@@ -1,0 +1,56 @@
+name: Split music library
+
+on:
+  workflow_dispatch:
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Split JSON into chunks
+        run: |
+          python3 <<'PY'
+          import json
+          from pathlib import Path
+
+          source = Path("vk_music_5668_songs.json")
+          output_dir = Path("library_chunks")
+          chunk_size = 1000
+
+          output_dir.mkdir(exist_ok=True)
+
+          with source.open("r", encoding="utf-8") as f:
+              songs = json.load(f)
+
+          total = len(songs)
+          print(f"Loaded {total} songs")
+
+          for file in output_dir.glob("songs_part_*.json"):
+              file.unlink()
+
+          for start in range(0, total, chunk_size):
+              chunk = songs[start:start + chunk_size]
+              part_number = start // chunk_size + 1
+              output = output_dir / f"songs_part_{part_number:02d}.json"
+
+              with output.open("w", encoding="utf-8") as f:
+                  json.dump(chunk, f, ensure_ascii=False, separators=(",", ":"))
+
+              print(f"Created {output}: {start + 1}-{start + len(chunk)} ({len(chunk)} songs)")
+          PY
+
+      - name: Commit chunks
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add library_chunks/
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Split music library into smaller chunks"
+            git push
+          fi
