@@ -16,7 +16,8 @@ jobs:
       - name: Extract broad rock and metal candidates
         run: |
           python3 <<'PY'
-          import json, re
+          import json
+          import re
           from pathlib import Path
 
           source = Path('vk_music_5668_songs.json')
@@ -25,8 +26,6 @@ jobs:
           with source.open(encoding='utf-8') as f:
               songs = json.load(f)
 
-          # Broad title signals. This is intentionally permissive; final selection
-          # will be manually ranked rather than treating every hit as rock/metal.
           patterns = [
               r'\bmetal\b', r'\bmetalcore\b', r'\bnu[- ]?metal\b',
               r'\bdeath\b', r'\bblack\b', r'\bdoom\b', r'\bthrash\b',
@@ -37,7 +36,7 @@ jobs:
               r'\bgodsmack\b', r'\bpowerwolf\b', r'\bfeuerschwanz\b',
               r'\bnightwish\b', r'\bevanescence\b', r'\bwithin temptation\b',
               r'\bepica\b', r'\barch enemy\b', r'\bavenged sevenfold\b',
-              r'\bdisturbed\b', r'\bkoRn\b', r'\bkorn\b', r'\bdeftones\b',
+              r'\bdisturbed\b', r'\bkorn\b', r'\bdeftones\b',
               r'\brammstein\b', r'\bghost\b', r'\bskillet\b',
               r'\bfall out boy\b', r'\bmy chemical romance\b',
               r'\bparamore\b', r'\bhalestorm\b', r'\bthe pretty reckless\b',
@@ -46,19 +45,18 @@ jobs:
               r'\bfolk metal\b', r'\bsymphonic\b', r'\bprogressive metal\b'
           ]
           rx = re.compile('|'.join(patterns), re.I)
-
-          # Also retain titles with strong artist-independent heavy-song terms.
           heavy_terms = re.compile(
-              r'\b(hate|rage|scream|screaming|hell|devil|demon|monster|war|blood|grave|fire|burn|\'
-              r'\bbleed|broken|destroy|sinner|darkness|riot|savage|beast|wicked)\b', re.I
+              r'\b(?:hate|rage|scream|screaming|hell|devil|demon|monster|war|blood|'
+              r'grave|fire|burn|bleed|broken|destroy|sinner|darkness|riot|savage|'
+              r'beast|wicked)\b', re.I
           )
 
           result = []
           seen = set()
           for song in songs:
-              title = str(song.get('title',''))
+              title = str(song.get('title', ''))
               if rx.search(title) or heavy_terms.search(title):
-                  key = (title.casefold(), song.get('url',''))
+                  key = (title.casefold(), song.get('url', ''))
                   if key not in seen:
                       seen.add(key)
                       result.append(song)
