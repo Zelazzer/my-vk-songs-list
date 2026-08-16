@@ -3,6 +3,9 @@ name: Split music library
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   split:
     runs-on: ubuntu-latest
