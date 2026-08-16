@@ -1,0 +1,65 @@
+name: Enrich rock metal candidates
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  enrich:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enrich candidates with Deezer metadata
+        run: |
+          python3 <<'PY'
+          import json, time, urllib.parse, urllib.request
+          from pathlib import Path
+
+          src = Path('rock_metal_candidates_broad.json')
+          out = Path('rock_metal_candidates_deezer.json')
+          songs = json.loads(src.read_text(encoding='utf-8'))
+
+          results=[]
+          cache={}
+          for i,s in enumerate(songs,1):
+              title=s.get('title','').strip()
+              if not title: continue
+              q=urllib.parse.urlencode({'q': title})
+              url='https://api.deezer.com/search?'+q
+              try:
+                  with urllib.request.urlopen(url, timeout=15) as r:
+                      data=json.load(r)
+                  hit=(data.get('data') or [None])[0]
+                  if hit:
+                      results.append({
+                        'title': title,
+                        'url': s.get('url'),
+                        'artist': (hit.get('artist') or {}).get('name'),
+                        'deezer_title': hit.get('title'),
+                        'album': (hit.get('album') or {}).get('title'),
+                        'link': hit.get('link'),
+                        'rank': hit.get('rank')
+                      })
+                  else:
+                      results.append(s)
+              except Exception as e:
+                  results.append({**s,'metadata_error':type(e).__name__})
+              if i % 25 == 0: print(f'Processed {i}/{len(songs)}')
+              time.sleep(0.12)
+
+          out.write_text(json.dumps(results,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(f'Input candidates: {len(songs)}')
+          print(f'Output records: {len(results)}')
+          PY
+
+      - name: Commit enriched file
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add rock_metal_candidates_deezer.json
+          git commit -m 'Enrich rock metal candidates with Deezer metadata' || echo 'No changes'
+          git push
